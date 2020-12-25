@@ -23,8 +23,8 @@ def impala_cnn(images, depths=[16, 32, 32]):
 
             var_name = 'mask_' + str(dropout_layer_num[0])
             batch_seed_shape = out_shape[1:]
-            batch_seed = tf.get_variable(var_name, shape=batch_seed_shape, initializer=tf.random_uniform_initializer(minval=0, maxval=1), trainable=False)
-            batch_seed_assign = tf.assign(batch_seed, tf.random_uniform(batch_seed_shape, minval=0, maxval=1))
+            batch_seed = tf.compat.v1.get_variable(var_name, shape=batch_seed_shape, initializer=tf.compat.v1.random_uniform_initializer(minval=0, maxval=1), trainable=False)
+            batch_seed_assign = tf.compat.v1.assign(batch_seed, tf.random.uniform(batch_seed_shape, minval=0, maxval=1))
             dropout_assign_ops.append(batch_seed_assign)
 
             curr_mask = tf.sign(tf.nn.relu(batch_seed[None,...] - Config.DROPOUT))
@@ -38,7 +38,7 @@ def impala_cnn(images, depths=[16, 32, 32]):
         return out
 
     def conv_layer(out, depth):
-        out = tf.layers.conv2d(out, depth, 3, padding='same')
+        out = tf.compat.v1.layers.conv2d(out, depth, 3, padding='same')
         out = dropout_layer(out)
 
         if use_batch_norm:
@@ -58,7 +58,7 @@ def impala_cnn(images, depths=[16, 32, 32]):
 
     def conv_sequence(inputs, depth):
         out = conv_layer(inputs, depth)
-        out = tf.layers.max_pooling2d(out, pool_size=3, strides=2, padding='same')
+        out = tf.compat.v1.layers.max_pooling2d(out, pool_size=3, strides=2, padding='same')
         out = residual_block(out)
         out = residual_block(out)
         return out
@@ -67,9 +67,9 @@ def impala_cnn(images, depths=[16, 32, 32]):
     for depth in depths:
         out = conv_sequence(out, depth)
 
-    out = tf.layers.flatten(out)
+    out = tf.compat.v1.layers.flatten(out)
     out = tf.nn.relu(out)
-    out = tf.layers.dense(out, 256, activation=tf.nn.relu)
+    out = tf.compat.v1.layers.dense(out, 256, activation=tf.nn.relu)
 
     return out, dropout_assign_ops
 
@@ -112,9 +112,9 @@ class LstmPolicy(object):
         self.pdtype = make_pdtype(ac_space)
         X, processed_x = observation_input(ob_space, nbatch)
 
-        M = tf.placeholder(tf.float32, [nbatch]) #mask (done t-1)
-        S = tf.placeholder(tf.float32, [nenv, nlstm*2]) #states
-        with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
+        M = tf.compat.v1.placeholder(tf.float32, [nbatch]) #mask (done t-1)
+        S = tf.compat.v1.placeholder(tf.float32, [nenv, nlstm*2]) #states
+        with tf.compat.v1.variable_scope("model", reuse=tf.compat.v1.AUTO_REUSE):
             h, self.dropout_assign_ops = choose_cnn(processed_x)
             xs = batch_to_seq(h, nenv, nsteps)
             ms = batch_to_seq(M, nenv, nsteps)
@@ -145,7 +145,7 @@ class CnnPolicy(object):
         self.pdtype = make_pdtype(ac_space)
         X, processed_x = observation_input(ob_space, nbatch)
 
-        with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
+        with tf.compat.v1.variable_scope("model", reuse=tf.compat.v1.AUTO_REUSE):
             h, self.dropout_assign_ops = choose_cnn(processed_x)
             vf = fc(h, 'v', 1)[:,0]
             self.pd, self.pi = self.pdtype.pdfromlatent(h, init_scale=0.01)

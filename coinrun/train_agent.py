@@ -17,20 +17,20 @@ def main():
     rank = comm.Get_rank()
 
     seed = int(time.time()) % 10000
-    set_global_seeds(seed * 100 + rank)
+    tf.compat.v1.random.set_random_seed(seed * 100 + rank)
 
     utils.setup_mpi_gpus()
 
-    config = tf.ConfigProto()
+    config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = True # pylint: disable=E1101
 
     nenvs = Config.NUM_ENVS
-    total_timesteps = int(256e6)
+    total_timesteps = int(1000*100)
     save_interval = args.save_interval
 
     env = utils.make_general_env(nenvs, seed=rank)
 
-    with tf.Session(config=config):
+    with tf.compat.v1.Session(config=config):
         env = wrappers.add_final_wrappers(env)
         
         policy = policies.get_policy()

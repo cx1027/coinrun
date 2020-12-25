@@ -21,14 +21,14 @@ from baselines.common.runners import AbstractEnvRunner
 from baselines.common.tf_util import initialize
 from baselines.common.mpi_util import sync_from_root
 
-class MpiAdamOptimizer(tf.train.AdamOptimizer):
+class MpiAdamOptimizer(tf.compat.v1.train.AdamOptimizer):
     """Adam optimizer that averages gradients across mpi processes."""
     def __init__(self, comm, **kwargs):
         self.comm = comm
         self.train_frac = 1.0 - Config.get_test_frac()
-        tf.train.AdamOptimizer.__init__(self, **kwargs)
+        tf.compat.v1.train.AdamOptimizer.__init__(self, **kwargs)
     def compute_gradients(self, loss, var_list, **kwargs):
-        grads_and_vars = tf.train.AdamOptimizer.compute_gradients(self, loss, var_list, **kwargs)
+        grads_and_vars = tf.compat.v1.train.AdamOptimizer.compute_gradients(self, loss, var_list, **kwargs)
         grads_and_vars = [(g, v) for g, v in grads_and_vars if g is not None]
 
         flat_grad = tf.concat([tf.reshape(g, (-1,)) for g, v in grads_and_vars], axis=0)
@@ -47,7 +47,7 @@ class MpiAdamOptimizer(tf.train.AdamOptimizer):
             np.divide(buf, float(num_tasks) * self.train_frac, out=buf)
             return buf
 
-        avg_flat_grad = tf.py_func(_collect_grads, [flat_grad], tf.float32)
+        avg_flat_grad = tf.compat.v1.py_func(_collect_grads, [flat_grad], tf.float32)
         avg_flat_grad.set_shape(flat_grad.shape)
         avg_grads = tf.split(avg_flat_grad, sizes, axis=0)
         avg_grads_and_vars = [(tf.reshape(g, v.shape), v)
@@ -58,36 +58,36 @@ class MpiAdamOptimizer(tf.train.AdamOptimizer):
 class Model(object):
     def __init__(self, *, policy, ob_space, ac_space, nbatch_act, nbatch_train,
                 nsteps, ent_coef, vf_coef, max_grad_norm):
-        sess = tf.get_default_session()
+        sess = tf.compat.v1.get_default_session()
 
         train_model = policy(sess, ob_space, ac_space, nbatch_train, nsteps)
-        norm_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        norm_update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
         act_model = policy(sess, ob_space, ac_space, nbatch_act, 1)
 
         A = train_model.pdtype.sample_placeholder([None])
-        ADV = tf.placeholder(tf.float32, [None])
-        R = tf.placeholder(tf.float32, [None])
-        OLDNEGLOGPAC = tf.placeholder(tf.float32, [None])
-        OLDVPRED = tf.placeholder(tf.float32, [None])
-        LR = tf.placeholder(tf.float32, [])
-        CLIPRANGE = tf.placeholder(tf.float32, [])
+        ADV = tf.compat.v1.placeholder(tf.float32, [None])
+        R = tf.compat.v1.placeholder(tf.float32, [None])
+        OLDNEGLOGPAC = tf.compat.v1.placeholder(tf.float32, [None])
+        OLDVPRED = tf.compat.v1.placeholder(tf.float32, [None])
+        LR = tf.compat.v1.placeholder(tf.float32, [])
+        CLIPRANGE = tf.compat.v1.placeholder(tf.float32, [])
 
         neglogpac = train_model.pd.neglogp(A)
-        entropy = tf.reduce_mean(train_model.pd.entropy())
+        entropy = tf.reduce_mean(input_tensor=train_model.pd.entropy())
 
         vpred = train_model.vf
         vpredclipped = OLDVPRED + tf.clip_by_value(train_model.vf - OLDVPRED, - CLIPRANGE, CLIPRANGE)
         vf_losses1 = tf.square(vpred - R)
         vf_losses2 = tf.square(vpredclipped - R)
-        vf_loss = .5 * tf.reduce_mean(tf.maximum(vf_losses1, vf_losses2))
+        vf_loss = .5 * tf.reduce_mean(input_tensor=tf.maximum(vf_losses1, vf_losses2))
         ratio = tf.exp(OLDNEGLOGPAC - neglogpac)
         pg_losses = -ADV * ratio
         pg_losses2 = -ADV * tf.clip_by_value(ratio, 1.0 - CLIPRANGE, 1.0 + CLIPRANGE)
-        pg_loss = tf.reduce_mean(tf.maximum(pg_losses, pg_losses2))
-        approxkl = .5 * tf.reduce_mean(tf.square(neglogpac - OLDNEGLOGPAC))
-        clipfrac = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE)))
+        pg_loss = tf.reduce_mean(input_tensor=tf.maximum(pg_losses, pg_losses2))
+        approxkl = .5 * tf.reduce_mean(input_tensor=tf.square(neglogpac - OLDNEGLOGPAC))
+        clipfrac = tf.reduce_mean(input_tensor=tf.cast(tf.greater(tf.abs(ratio - 1.0), CLIPRANGE), dtype=tf.float32))
 
-        params = tf.trainable_variables()
+        params = tf.compat.v1.trainable_variables()
         weight_params = [v for v in params if '/b' not in v.name]
 
         total_num_params = 0
@@ -100,14 +100,14 @@ class Model(object):
 
         mpi_print('total num params:', total_num_params)
 
-        l2_loss = tf.reduce_sum([tf.nn.l2_loss(v) for v in weight_params])
+        l2_loss = tf.reduce_sum(input_tensor=[tf.nn.l2_loss(v) for v in weight_params])
 
         loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + l2_loss * Config.L2_WEIGHT
 
         if Config.SYNC_FROM_ROOT:
             trainer = MpiAdamOptimizer(MPI.COMM_WORLD, learning_rate=LR, epsilon=1e-5)
         else:
-            trainer = tf.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
+            trainer = tf.compat.v1.train.AdamOptimizer(learning_rate=LR, epsilon=1e-5)
 
         grads_and_var = trainer.compute_gradients(loss, params)
 
@@ -160,7 +160,7 @@ class Model(object):
             if MPI.COMM_WORLD.Get_rank() == 0:
                 initialize()
             
-            global_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="")
+            global_variables = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.GLOBAL_VARIABLES, scope="")
             sync_from_root(sess, global_variables) #pylint: disable=E1101
         else:
             initialize()
@@ -243,7 +243,7 @@ def learn(*, policy, env, nsteps, total_timesteps, ent_coef, lr,
     rank = comm.Get_rank()
     mpi_size = comm.Get_size()
 
-    sess = tf.get_default_session()
+    sess = tf.compat.v1.get_default_session()
     tb_writer = TB_Writer(sess)
 
     if isinstance(lr, float): lr = constfn(lr)

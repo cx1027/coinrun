@@ -42,7 +42,7 @@ def enjoy_env_sess(sess):
 
     agent = create_act_model(sess, env, nenvs)
 
-    sess.run(tf.global_variables_initializer())
+    sess.run(tf.compat.v1.global_variables_initializer())
     loaded_params = utils.load_params_for_scope(sess, 'model')
 
     if not loaded_params:
@@ -78,6 +78,7 @@ def enjoy_env_sess(sess):
     while should_continue():
         action, values, state, _ = agent.step(obs, state, done)
         obs, rew, done, info = env.step(action)
+        env.render()
 
         if should_render and should_render_obs:
             if np.shape(obs)[-1] % 3 == 0:
@@ -132,7 +133,7 @@ def enjoy_env_sess(sess):
 def main():
     utils.setup_mpi_gpus()
     setup_utils.setup_and_load()
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
         enjoy_env_sess(sess)
 
 if __name__ == '__main__':
